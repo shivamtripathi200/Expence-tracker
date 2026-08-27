@@ -1,0 +1,16 @@
+from fastapi import FastAPI
+
+app = FastAPI()
+
+
+
+
+
+
+
+
+@app.get("/")
+def root():
+    return{
+        "message": "Expence tracker API is running"
+    }
