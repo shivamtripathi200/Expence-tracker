@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ledger — expense &amp; income tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Spectral:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper: #EEF0EA;
+    --paper-raised: #F6F7F2;
+    --ink: #1F2421;
+    --ink-soft: #5B645D;
+    --line: rgba(31,36,33,0.16);
+    --income: #2F5233;
+    --expense: #8B3A2B;
+    --accent: #B98B2A;
+    --danger: #8B3A2B;
+  }
+  *{ box-sizing: border-box; }
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'IBM Plex Sans', sans-serif;
+    font-size:15px;
+    line-height:1.5;
+  }
+  .page{ max-width:720px; margin:0 auto; padding:48px 24px 96px; }
+
+  header{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:28px; }
+  .brand h1{
+    font-family:'Spectral', serif;
+    font-weight:600;
+    font-size:28px;
+    margin:0 0 2px;
+    letter-spacing:0.2px;
+  }
+  .brand p{ margin:0; color:var(--ink-soft); font-size:13.5px; }
+  .status{ display:flex; align-items:center; gap:7px; font-size:12.5px; color:var(--ink-soft); }
+  .status .dot{ width:8px; height:8px; border-radius:50%; background:var(--ink-soft); }
+  .status.ok .dot{ background:var(--income); }
+  .status.down .dot{ background:var(--danger); }
+
+  .summary{
+    display:flex; border-top:1px solid var(--line); border-bottom:1px solid var(--line);
+    margin-bottom:32px;
+  }
+  .summary div{ flex:1; padding:16px 4px; }
+  .summary div + div{ border-left:1px solid var(--line); padding-left:20px; }
+  .summary .label{ font-size:12px; color:var(--ink-soft); margin-bottom:4px; }
+  .summary .value{ font-family:'Spectral', serif; font-size:22px; font-variant-numeric: tabular-nums; }
+  .summary .income .value{ color:var(--income); }
+  .summary .expense .value{ color:var(--expense); }
+
+  .actions{ display:flex; gap:10px; margin-bottom:8px; }
+  button{
+    font-family:inherit; font-size:14px; cursor:pointer;
+    border:1px solid var(--line); background:var(--paper-raised);
+    color:var(--ink); padding:9px 16px; border-radius:3px;
+  }
+  button.primary{ background:var(--ink); color:var(--paper); border-color:var(--ink); }
+  button.ghost{ background:transparent; border-color:transparent; padding:6px 8px; }
+  button.small{ padding:5px 10px; font-size:12.5px; }
+  button:hover{ filter:brightness(1.06); }
+
+  form.entry-form{
+    overflow:hidden; max-height:0; opacity:0; transition:max-height .28s ease, opacity .28s ease, margin .28s ease;
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:4px; margin-top:0;
+  }
+  form.entry-form.open{ max-height:340px; opacity:1; margin:14px 0 26px; }
+  form.entry-form .grid{
+    display:grid; grid-template-columns:1fr 1fr; gap:12px; padding:18px;
+  }
+  form.entry-form .grid .full{ grid-column:1 / -1; }
+  form.entry-form label{ display:block; font-size:12px; color:var(--ink-soft); margin-bottom:5px; }
+  form.entry-form input, form.entry-form select{
+    width:100%; font-family:inherit; font-size:14px; padding:8px 9px;
+    border:1px solid var(--line); border-radius:3px; background:#fff; color:var(--ink);
+  }
+  form.entry-form .row-actions{ grid-column:1/-1; display:flex; justify-content:flex-end; gap:8px; }
+
+  section.ledger{ margin-top:36px; }
+  section.ledger h2{ font-family:'Spectral', serif; font-size:17px; font-weight:600; margin:0 0 10px; }
+
+  table{ width:100%; border-collapse:collapse; }
+  thead th{
+    text-align:left; font-size:12px; font-weight:500; color:var(--ink-soft);
+    padding:8px 6px; border-bottom:1px solid var(--line);
+  }
+  thead th.num, td.num{ text-align:right; }
+  tbody td{ padding:11px 6px; border-bottom:1px solid var(--line); font-size:14px; vertical-align:middle; }
+  td.num{ font-variant-numeric: tabular-nums; }
+  td.cat span{
+    font-size:12px; padding:2px 8px; border-radius:10px; border:1px solid var(--line); color:var(--ink-soft);
+  }
+  tbody tr:hover{ background:rgba(31,36,33,0.03); }
+  .row-tools{ display:flex; gap:4px; justify-content:flex-end; }
+
+  .empty, .error{ padding:22px 6px; color:var(--ink-soft); font-size:13.5px; }
+  .error{ color:var(--danger); }
+
+  .session-note{ font-size:12.5px; color:var(--ink-soft); margin:6px 0 0; }
+  ul.session-list{ list-style:none; margin:10px 0 0; padding:0; }
+  ul.session-list li{
+    display:flex; justify-content:space-between; padding:8px 6px; border-bottom:1px solid var(--line); font-size:13.5px;
+  }
+  ul.session-list li span.amt{ font-variant-numeric: tabular-nums; color:var(--income); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div class="brand">
+      <h1>Ledger</h1>
+      <p>Personal expense &amp; income tracker</p>
+    </div>
+    <div class="status" id="status"><span class="dot"></span><span id="statusText">Checking connection…</span></div>
+  </header>
+
+  <div class="summary">
+    <div class="income">
+      <div class="label">Income logged this session</div>
+      <div class="value" id="incomeTotal">0.00</div>
+    </div>
+    <div class="expense">
+      <div class="label">Total expenses</div>
+      <div class="value" id="expenseTotal">0.00</div>
+    </div>
+    <div>
+      <div class="label">Net (session)</div>
+      <div class="value" id="netTotal">0.00</div>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="toggleExpenseForm">Add expense</button>
+    <button id="toggleIncomeForm">Add income</button>
+  </div>
+
+  <form class="entry-form" id="expenseForm">
+    <div class="grid">
+      <div class="full">
+        <label>Title</label>
+        <input type="text" name="title" required maxlength="255">
+      </div>
+      <div>
+        <label>Amount</label>
+        <input type="number" name="amount" step="0.01" min="0" required>
+      </div>
+      <div>
+        <label>Category</label>
+        <select name="category" required>
+          <option value="food">Food</option>
+          <option value="transport">Transport</option>
+          <option value="rent">Rent</option>
+        </select>
+      </div>
+      <div>
+        <label>Date</label>
+        <input type="date" name="expense_date" required>
+      </div>
+      <div>
+        <label>Description (optional)</label>
+        <input type="text" name="description" maxlength="255">
+      </div>
+      <div class="row-actions">
+        <button type="button" class="ghost" data-cancel="expenseForm">Cancel</button>
+        <button type="submit" class="primary">Save expense</button>
+      </div>
+    </div>
+  </form>
+
+  <form class="entry-form" id="incomeForm">
+    <div class="grid">
+      <div class="full">
+        <label>Title</label>
+        <input type="text" name="title" required maxlength="255">
+      </div>
+      <div>
+        <label>Amount</label>
+        <input type="number" name="amount" step="0.01" min="0" required>
+      </div>
+      <div>
+        <label>Category</label>
+        <select name="category" required>
+          <option value="salary">Salary</option>
+          <option value="business">Business</option>
+          <option value="investment">Investment</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div>
+        <label>Date</label>
+        <input type="date" name="income_date" required>
+      </div>
+      <div>
+        <label>Description (optional)</label>
+        <input type="text" name="description" maxlength="255">
+      </div>
+      <div class="row-actions">
+        <button type="button" class="ghost" data-cancel="incomeForm">Cancel</button>
+        <button type="submit" class="primary">Save income</button>
+      </div>
+    </div>
+  </form>
+
+  <section class="ledger">
+    <h2>Expenses</h2>
+    <div id="expensesArea"><div class="empty">Loading…</div></div>
+  </section>
+
+  <section class="ledger">
+    <h2>Income added this session</h2>
+    <p class="session-note">There's no listing endpoint for income yet, so this only shows what you've added since opening this page.</p>
+    <ul class="session-list" id="incomeSessionList"></ul>
+  </section>
+
+</div>
+
+<script>
+// Change this if your API runs somewhere other than the default local address.
+const API_BASE = "http://127.0.0.1:8000";
+
+const els = {
+  status: document.getElementById('status'),
+  statusText: document.getElementById('statusText'),
+  incomeTotal: document.getElementById('incomeTotal'),
+  expenseTotal: document.getElementById('expenseTotal'),
+  netTotal: document.getElementById('netTotal'),
+  expensesArea: document.getElementById('expensesArea'),
+  incomeSessionList: document.getElementById('incomeSessionList'),
+};
+
+let sessionIncomeTotal = 0;
+let expenses = [];
+
+function fmt(n){ return Number(n).toFixed(2); }
+
+function updateSummary(){
+  const expenseTotal = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
+  els.expenseTotal.textContent = fmt(expenseTotal);
+  els.incomeTotal.textContent = fmt(sessionIncomeTotal);
+  els.netTotal.textContent = fmt(sessionIncomeTotal - expenseTotal);
+}
+
+async function checkHealth(){
+  try{
+    const res = await fetch(`${API_BASE}/health`);
+    if(!res.ok) throw new Error();
+    els.status.className = 'status ok';
+    els.statusText.textContent = 'Connected';
+  }catch{
+    els.status.className = 'status down';
+    els.statusText.textContent = 'Can\u2019t reach the API';
+  }
+}
+
+function toggleForm(id){
+  const form = document.getElementById(id);
+  const isOpen = form.classList.contains('open');
+  document.querySelectorAll('.entry-form').forEach(f => f.classList.remove('open'));
+  if(!isOpen) form.classList.add('open');
+}
+document.getElementById('toggleExpenseForm').addEventListener('click', () => toggleForm('expenseForm'));
+document.getElementById('toggleIncomeForm').addEventListener('click', () => toggleForm('incomeForm'));
+document.querySelectorAll('[data-cancel]').forEach(btn => {
+  btn.addEventListener('click', () => document.getElementById(btn.dataset.cancel).classList.remove('open'));
+});
+
+function renderExpenses(){
+  if(!expenses.length){
+    els.expensesArea.innerHTML = `<div class="empty">No expenses logged yet. Add one above to get started.</div>`;
+    return;
+  }
+  const rows = expenses.map(e => `
+    <tr data-id="${e.id}">
+      <td>${e.expense_date}</td>
+      <td>${escapeHtml(e.title)}</td>
+      <td class="cat"><span>${e.category}</span></td>
+      <td>${escapeHtml(e.description || '')}</td>
+      <td class="num">${fmt(e.amount)}</td>
+      <td>
+        <div class="row-tools">
+          <button class="small ghost" data-edit="${e.id}">Edit</button>
+          <button class="small ghost" data-delete="${e.id}">Delete</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+  els.expensesArea.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Date</th><th>Title</th><th>Category</th><th>Description</th><th class="num">Amount</th><th></th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+  els.expensesArea.querySelectorAll('[data-delete]').forEach(btn =>
+    btn.addEventListener('click', () => deleteExpense(btn.dataset.delete)));
+  els.expensesArea.querySelectorAll('[data-edit]').forEach(btn =>
+    btn.addEventListener('click', () => startEdit(btn.dataset.edit)));
+}
+
+function escapeHtml(str){
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+async function loadExpenses(){
+  try{
+    const res = await fetch(`${API_BASE}/expenses`);
+    if(!res.ok) throw new Error(`Server responded ${res.status}`);
+    expenses = await res.json();
+    renderExpenses();
+    updateSummary();
+  }catch(err){
+    els.expensesArea.innerHTML = `<div class="error">Couldn\u2019t load expenses (${err.message}). Check that the API is running and /expenses isn\u2019t returning an error.</div>`;
+  }
+}
+
+document.getElementById('expenseForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const form = ev.target;
+  const body = {
+    title: form.title.value,
+    amount: form.amount.value,
+    category: form.category.value,
+    description: form.description.value || null,
+    expense_date: form.expense_date.value,
+  };
+  try{
+    // Note: this project's create-expense route is spelled "/expences" (matching
+    // the code it was built from) even though the read/update/delete routes use
+    // the standard spelling "/expenses". Worth unifying these later.
+    const res = await fetch(`${API_BASE}/expences`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if(!res.ok) throw new Error(`Server responded ${res.status}`);
+    form.reset();
+    form.classList.remove('open');
+    await loadExpenses();
+  }catch(err){
+    alert(`Couldn't save that expense: ${err.message}`);
+  }
+});
+
+document.getElementById('incomeForm').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const form = ev.target;
+  const body = {
+    title: form.title.value,
+    amount: form.amount.value,
+    category: form.category.value,
+    description: form.description.value || null,
+    income_date: form.income_date.value,
+  };
+  try{
+    const res = await fetch(`${API_BASE}/income`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if(!res.ok) throw new Error(`Server responded ${res.status}`);
+    const saved = await res.json();
+    sessionIncomeTotal += Number(saved.amount);
+    const li = document.createElement('li');
+    li.innerHTML = `<span>${escapeHtml(saved.title)} \u2014 ${saved.category}</span><span class="amt">${fmt(saved.amount)}</span>`;
+    els.incomeSessionList.prepend(li);
+    updateSummary();
+    form.reset();
+    form.classList.remove('open');
+  }catch(err){
+    alert(`Couldn't save that income: ${err.message}`);
+  }
+});
+
+async function deleteExpense(id){
+  if(!confirm('Delete this expense?')) return;
+  try{
+    const res = await fetch(`${API_BASE}/expenses/${id}`, { method: 'DELETE' });
+    if(!res.ok && res.status !== 204) throw new Error(`Server responded ${res.status}`);
+    await loadExpenses();
+  }catch(err){
+    alert(`Couldn't delete: ${err.message}`);
+  }
+}
+
+function startEdit(id){
+  const expense = expenses.find(e => String(e.id) === String(id));
+  const row = els.expensesArea.querySelector(`tr[data-id="${id}"]`);
+  row.innerHTML = `
+    <td><input type="date" value="${expense.expense_date}" class="e-date"></td>
+    <td><input type="text" value="${escapeHtml(expense.title)}" class="e-title"></td>
+    <td>
+      <select class="e-category">
+        ${['food','transport','rent'].map(c => `<option value="${c}" ${c===expense.category?'selected':''}>${c}</option>`).join('')}
+      </select>
+    </td>
+    <td><input type="text" value="${escapeHtml(expense.description || '')}" class="e-desc"></td>
+    <td class="num"><input type="number" step="0.01" value="${expense.amount}" class="e-amount" style="text-align:right; width:90px;"></td>
+    <td>
+      <div class="row-tools">
+        <button class="small primary" data-save="${id}">Save</button>
+        <button class="small ghost" data-cancel-edit>Cancel</button>
+      </div>
+    </td>
+  `;
+  row.querySelector('[data-save]').addEventListener('click', () => saveEdit(id, row));
+  row.querySelector('[data-cancel-edit]').addEventListener('click', renderExpenses);
+}
+
+async function saveEdit(id, row){
+  const body = {
+    title: row.querySelector('.e-title').value,
+    amount: row.querySelector('.e-amount').value,
+    category: row.querySelector('.e-category').value,
+    description: row.querySelector('.e-desc').value || null,
+    expense_date: row.querySelector('.e-date').value,
+  };
+  try{
+    const res = await fetch(`${API_BASE}/expenses/${id}`, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    });
+    if(!res.ok) throw new Error(`Server responded ${res.status}`);
+    await loadExpenses();
+  }catch(err){
+    alert(`Couldn't save changes: ${err.message}`);
+  }
+}
+
+checkHealth();
+loadExpenses();
+</script>
+</body>
+</html>
