@@ -9,6 +9,14 @@ from Schema.expense import expense, expense_response, expense_update
 
 
 app = FastAPI()
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class income_create(BaseModel):
     title: str
